@@ -1,0 +1,243 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum MedicationSource {
+  OFFICIAL_API
+  USER_INPUT
+}
+
+enum ReportType {
+  DRUG_NAME
+  INGREDIENTS
+  WARNINGS
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  TRIAGED
+  RESOLVED
+  REJECTED
+}
+
+enum AccessAction {
+  VIEW_SHARED_MED
+  VIEW_QUICK_CHECK_RESULT
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  profile        Profile?
+  ownedGroups    FamilyGroup[] @relation("FamilyGroupOwner")
+  memberships    GroupMember[]
+  meds           Medication[]
+  createdInvites Invite[]      @relation("InviteCreatedBy")
+  reports        ReportIssue[]
+  accessLogs     AccessLog[]
+}
+
+model Profile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  nickname  String
+  imageUrl  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model FamilyGroup {
+  id          String   @id @default(cuid())
+  name        String
+  ownerUserId String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner   User          @relation("FamilyGroupOwner", fields: [ownerUserId], references: [id])
+  members GroupMember[]
+  invites Invite[]
+
+  @@index([ownerUserId])
+}
+
+model GroupMember {
+  id       String    @id @default(cuid())
+  groupId  String
+  userId   String
+  joinedAt DateTime  @default(now())
+  leftAt   DateTime?
+
+  group FamilyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  sharedToMe     MedicationShare[] @relation("SharedToMember")
+  receivedAccess AccessLog[]       @relation("AccessLogTargetMember")
+
+  @@unique([groupId, userId])
+  @@index([userId])
+  @@index([groupId])
+}
+
+model Invite {
+  id              String    @id @default(cuid())
+  groupId         String
+  createdByUserId String
+  tokenHash       String    @unique
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  group     FamilyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdBy User        @relation("InviteCreatedBy", fields: [createdByUserId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+  @@index([createdByUserId])
+}
+
+model Medication {
+  id                       String           @id @default(cuid())
+  ownerUserId              String
+  displayName              String
+  source                   MedicationSource
+  drugCatalogId            String?
+  userInputIngredientsText String?
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
+
+  owner       User              @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  drugCatalog DrugCatalog?      @relation(fields: [drugCatalogId], references: [id], onDelete: SetNull)
+  shares      MedicationShare[]
+  accessLogs  AccessLog[]
+  reports     ReportIssue[]
+
+  @@index([ownerUserId])
+  @@index([drugCatalogId])
+}
+
+model MedicationShare {
+  id               String    @id @default(cuid())
+  medicationId     String
+  sharedToMemberId String
+  createdAt        DateTime  @default(now())
+  revokedAt        DateTime?
+
+  medication     Medication  @relation(fields: [medicationId], references: [id], onDelete: Cascade)
+  sharedToMember GroupMember @relation("SharedToMember", fields: [sharedToMemberId], references: [id], onDelete: Cascade)
+
+  @@unique([medicationId, sharedToMemberId])
+  @@index([sharedToMemberId])
+}
+
+model DrugCatalog {
+  id              String    @id @default(cuid())
+  productCode     String?   @unique
+  name            String
+  sourceName      String
+  sourceUpdatedAt DateTime?
+  fetchedAt       DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  ingredients DrugCatalogIngredient[]
+  aliases     DrugAlias[]
+  meds        Medication[]
+  reports     ReportIssue[]
+}
+
+model Ingredient {
+  id            String @id @default(cuid())
+  name          String
+  normalizedKey String @unique
+
+  inDrugs      DrugCatalogIngredient[]
+  interactionA InteractionRule[]       @relation("InteractionIngredientA")
+  interactionB InteractionRule[]       @relation("InteractionIngredientB")
+}
+
+model DrugCatalogIngredient {
+  id            String  @id @default(cuid())
+  drugCatalogId String
+  ingredientId  String
+  amountText    String?
+
+  drug       DrugCatalog @relation(fields: [drugCatalogId], references: [id], onDelete: Cascade)
+  ingredient Ingredient  @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@unique([drugCatalogId, ingredientId])
+  @@index([ingredientId])
+}
+
+model DrugAlias {
+  id              String @id @default(cuid())
+  drugCatalogId   String
+  alias           String
+  normalizedAlias String
+
+  drug DrugCatalog @relation(fields: [drugCatalogId], references: [id], onDelete: Cascade)
+
+  @@index([normalizedAlias])
+}
+
+model InteractionRule {
+  id             String  @id @default(cuid())
+  ingredientAId  String
+  ingredientBId  String
+  severity       String
+  evidenceSource String
+  note           String?
+  active         Boolean @default(true)
+
+  ingredientA Ingredient @relation("InteractionIngredientA", fields: [ingredientAId], references: [id], onDelete: Cascade)
+  ingredientB Ingredient @relation("InteractionIngredientB", fields: [ingredientBId], references: [id], onDelete: Cascade)
+
+  @@unique([ingredientAId, ingredientBId])
+  @@index([active])
+}
+
+model ReportIssue {
+  id             String       @id @default(cuid())
+  reporterUserId String
+  reportType     ReportType
+  message        String
+  medicationId   String?
+  drugCatalogId  String?
+  attachmentUrl  String?
+  status         ReportStatus @default(OPEN)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  reporter    User         @relation(fields: [reporterUserId], references: [id], onDelete: Cascade)
+  medication  Medication?  @relation(fields: [medicationId], references: [id], onDelete: SetNull)
+  drugCatalog DrugCatalog? @relation(fields: [drugCatalogId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([reporterUserId])
+}
+
+model AccessLog {
+  id             String       @id @default(cuid())
+  viewerUserId   String
+  targetMemberId String
+  action         AccessAction
+  medicationId   String?
+  createdAt      DateTime     @default(now())
+
+  viewer       User        @relation(fields: [viewerUserId], references: [id], onDelete: Cascade)
+  targetMember GroupMember @relation("AccessLogTargetMember", fields: [targetMemberId], references: [id], onDelete: Cascade)
+  medication   Medication? @relation(fields: [medicationId], references: [id], onDelete: SetNull)
+
+  @@index([viewerUserId])
+  @@index([targetMemberId])
+  @@index([createdAt])
+}

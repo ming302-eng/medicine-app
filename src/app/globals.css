@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+/* 기본 배경/텍스트 토큰(디자인 가이드 기반, 추후 shadcn 테마/토큰으로 정교화) */
+:root {
+  --color-bg: #ffffff;
+  --color-text-primary: #111827;
+  --color-text-secondary: #6b7280;
+  --color-border: #e5e7eb;
+  --color-divider: #f1f3f5;
+  --color-primary: #25c9b8;
+  --color-primary-soft: #e6faf7;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+}
+
